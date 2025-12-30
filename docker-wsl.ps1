@@ -188,35 +188,42 @@ try {
     Write-Host "  winget install Docker.Buildx" -ForegroundColor White
 }
 
-# Step 10. Create Task Scheduler job to start Ubuntu at startup
-Write-Host "`n[10/10] Creating Task Scheduler job to start Ubuntu at startup..." -ForegroundColor Green
+# Step 10. Create Windows Service to keep Ubuntu running
+Write-Host "`n[10/10] Creating Windows Service to keep Ubuntu running..." -ForegroundColor Green
 try {
-    $taskName = "WSL-Ubuntu-Startup"
+    $serviceName = "WSLUbuntuService"
     
-    # Check if task already exists
-    $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-    if ($existingTask) {
-        Write-Host "Task already exists. Removing old task..." -ForegroundColor Yellow
-        Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
+    # Check if service already exists
+    $existingService = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+    if ($existingService) {
+        Write-Host "Service already exists. Stopping and removing old service..." -ForegroundColor Yellow
+        Stop-Service -Name $serviceName -Force -ErrorAction SilentlyContinue
+        sc.exe delete $serviceName | Out-Null
+        Start-Sleep -Seconds 2
     }
     
-    # Create the action
-    $action = New-ScheduledTaskAction -Execute "C:\Windows\System32\wsl.exe" -Argument "-d Ubuntu -u root sleep infinity"
+    # Create the service using native sc.exe
+    # Using sc.exe for simplicity (native Windows tool)
+    $wslPath = "C:\Windows\System32\wsl.exe"
+    $wslArgs = "-d Ubuntu -u root sleep infinity"
     
-    # Create the trigger (at startup)
-    $trigger = New-ScheduledTaskTrigger -AtStartup
+    # Create service with sc.exe
+    sc.exe create $serviceName binPath= "`"$wslPath`" $wslArgs" start= auto DisplayName= "WSL Ubuntu Service" | Out-Null
     
-    # Create the principal (run whether user is logged in or not, don't store password)
-    $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+    # Configure service to restart on failure
+    sc.exe failure $serviceName reset= 86400 actions= restart/60000/restart/60000/restart/60000 | Out-Null
     
-    # Register the task
-    Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Description "Starts WSL Ubuntu distribution at system startup to keep Docker running"
+    # Set service description
+    sc.exe description $serviceName "Keeps WSL Ubuntu distribution running to maintain Docker service availability" | Out-Null
     
-    Write-Host "Task Scheduler job created successfully!" -ForegroundColor Green
-    Write-Host "Ubuntu will now start automatically at system startup" -ForegroundColor Green
+    # Start the service
+    Start-Service -Name $serviceName
+    
+    Write-Host "Windows Service created and started successfully!" -ForegroundColor Green
+    Write-Host "Ubuntu will now run as a Windows service and start automatically at system startup" -ForegroundColor Green
+    Write-Host "Service name: $serviceName" -ForegroundColor Cyan
 } catch {
-    Write-Host "Error creating Task Scheduler job: $_" -ForegroundColor Red
-    Write-Host "You may need to create it manually in Task Scheduler" -ForegroundColor Yellow
+    Write-Host "Error creating Windows Service: $_" -ForegroundColor Red   
 }
 
 # Final instructions
