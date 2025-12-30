@@ -13,8 +13,8 @@ if (-not $isAdmin) {
     exit 1
 }
 
-# 1. Install WSL
-Write-Host "`n[1/9] Installing WSL..." -ForegroundColor Green
+# Step 1. Install WSL
+Write-Host "`n[1/10] Installing WSL..." -ForegroundColor Green
 try {
     $wslInstalled = Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Windows-Subsystem-Linux
     if ($wslInstalled.State -ne "Enabled") {
@@ -27,8 +27,8 @@ try {
     Write-Host "Error installing WSL: $_" -ForegroundColor Red
 }
 
-# Enable Virtual Machine Platform
-Write-Host "`n[2/9] Enabling Virtual Machine Platform..." -ForegroundColor Green
+# Step 2. Enable Virtual Machine Platform
+Write-Host "`n[2/10] Enabling Virtual Machine Platform..." -ForegroundColor Green
 try {
     $vmPlatform = Get-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform
     if ($vmPlatform.State -ne "Enabled") {
@@ -41,8 +41,8 @@ try {
     Write-Host "Error enabling Virtual Machine Platform: $_" -ForegroundColor Red
 }
 
-# 2. Update WSL
-Write-Host "`n[3/9] Updating WSL..." -ForegroundColor Green
+# Step 3. Update WSL
+Write-Host "`n[3/10] Updating WSL..." -ForegroundColor Green
 try {
     wsl --update
     Write-Host "WSL updated successfully" -ForegroundColor Green
@@ -50,8 +50,8 @@ try {
     Write-Host "Error updating WSL: $_" -ForegroundColor Red
 }
 
-# 3. Set WSL 2 as default
-Write-Host "`n[4/9] Setting WSL 2 as default version..." -ForegroundColor Green
+# Step 4. Set WSL 2 as default
+Write-Host "`n[4/10] Setting WSL 2 as default version..." -ForegroundColor Green
 try {
     wsl --set-default-version 2
     Write-Host "WSL 2 set as default" -ForegroundColor Green
@@ -59,8 +59,8 @@ try {
     Write-Host "Error setting WSL 2 as default: $_" -ForegroundColor Red
 }
 
-# 4. Install Ubuntu from Windows Store
-Write-Host "`n[5/9] Installing Ubuntu..." -ForegroundColor Green
+# Step 5. Install Ubuntu from Windows Store
+Write-Host "`n[5/10] Installing Ubuntu..." -ForegroundColor Green
 Write-Host "Checking if Ubuntu is already installed..." -ForegroundColor Yellow
 $ubuntuInstalled = wsl --list --quiet | Select-String -Pattern "Ubuntu"
 
@@ -83,15 +83,15 @@ if (-not $ubuntuInstalled) {
 Write-Host "`nPress any key once Ubuntu setup is complete..." -ForegroundColor Cyan
 $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 
-# 5. Update and Upgrade Linux Distribution
-Write-Host "`n[6/9] Updating and upgrading Ubuntu..." -ForegroundColor Green
+# Step 6. Update and Upgrade Linux Distribution
+Write-Host "`n[6/10] Updating and upgrading Ubuntu..." -ForegroundColor Green
 $updateScript = @"
 sudo apt update && sudo apt upgrade -y
 "@
 wsl -d Ubuntu -e bash -c $updateScript
 
-# 6. Install Docker in Linux
-Write-Host "`n[7/9] Installing Docker in Ubuntu..." -ForegroundColor Green
+# Step 7. Install Docker in Linux
+Write-Host "`n[7/10] Installing Docker in Ubuntu..." -ForegroundColor Green
 $dockerInstallScript = @'
 # Remove old Docker installations
 sudo apt remove -y docker docker-engine docker.io containerd runc
@@ -119,8 +119,8 @@ echo 'Docker installed successfully!'
 
 wsl -d Ubuntu -e bash -c $dockerInstallScript
 
-# 7. Configure Docker daemon and start service
-Write-Host "`n[8/9] Configuring Docker daemon and starting service..." -ForegroundColor Green
+# Step 8. Configure Docker daemon and start service
+Write-Host "`n[8/10] Configuring Docker daemon and starting service..." -ForegroundColor Green
 $dockerConfigScript = @'
 # Create systemd override directory
 sudo mkdir -p /etc/systemd/system/docker.service.d
@@ -144,8 +144,8 @@ echo 'Docker configured and started successfully!'
 
 wsl -d Ubuntu -e bash -c $dockerConfigScript
 
-# 8. Install Docker CLI on Windows and configure
-Write-Host "`n[9/9] Installing Docker tools on Windows..." -ForegroundColor Green
+# Step 9. Install Docker CLI on Windows and configure
+Write-Host "`n[9/10] Installing Docker tools on Windows..." -ForegroundColor Green
 
 try {
     # Install Docker CLI using winget
@@ -162,9 +162,23 @@ try {
     Write-Host "Installing Docker Buildx via winget..." -ForegroundColor Yellow
     winget install -e --id Docker.Buildx --accept-package-agreements --accept-source-agreements
     Write-Host "Docker Buildx installed successfully!" -ForegroundColor Green
-    # Set DOCKER_HOST environment variable to use localhost (WSL2 forwards to WSL automatically)
-    [Environment]::SetEnvironmentVariable("DOCKER_HOST", "tcp://localhost:2375", "User")
-    Write-Host "Set DOCKER_HOST to tcp://localhost:2375" -ForegroundColor Green
+    
+    # Get WSL Ubuntu IP address for DOCKER_HOST
+    Write-Host "Detecting WSL Ubuntu IP address..." -ForegroundColor Yellow
+    $wslIp = wsl -d Ubuntu hostname -I | ForEach-Object { $_.Trim().Split()[0] }
+    
+    if ([string]::IsNullOrWhiteSpace($wslIp)) {
+        # Fallback to 127.0.0.1 if we can't get WSL IP
+        Write-Host "Could not detect WSL IP, using 127.0.0.1..." -ForegroundColor Yellow
+        $dockerHost = "tcp://127.0.0.1:2375"
+    } else {
+        Write-Host "WSL Ubuntu IP detected: $wslIp" -ForegroundColor Green
+        $dockerHost = "tcp://${wslIp}:2375"
+    }
+    
+    # Set DOCKER_HOST environment variable
+    [Environment]::SetEnvironmentVariable("DOCKER_HOST", $dockerHost, "User")
+    Write-Host "Set DOCKER_HOST to $dockerHost" -ForegroundColor Green
     
 } catch {
     Write-Host "Error installing Docker tools: $_" -ForegroundColor Red
@@ -172,6 +186,37 @@ try {
     Write-Host "  winget install Docker.DockerCLI" -ForegroundColor White
     Write-Host "  winget install Docker.DockerCompose" -ForegroundColor White
     Write-Host "  winget install Docker.Buildx" -ForegroundColor White
+}
+
+# Step 10. Create Task Scheduler job to start Ubuntu at startup
+Write-Host "`n[10/10] Creating Task Scheduler job to start Ubuntu at startup..." -ForegroundColor Green
+try {
+    $taskName = "WSL-Ubuntu-Startup"
+    
+    # Check if task already exists
+    $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+    if ($existingTask) {
+        Write-Host "Task already exists. Removing old task..." -ForegroundColor Yellow
+        Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
+    }
+    
+    # Create the action
+    $action = New-ScheduledTaskAction -Execute "C:\Windows\System32\wsl.exe" -Argument "-d Ubuntu -u root sleep infinity"
+    
+    # Create the trigger (at startup)
+    $trigger = New-ScheduledTaskTrigger -AtStartup
+    
+    # Create the principal (run whether user is logged in or not, don't store password)
+    $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+    
+    # Register the task
+    Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Description "Starts WSL Ubuntu distribution at system startup to keep Docker running"
+    
+    Write-Host "Task Scheduler job created successfully!" -ForegroundColor Green
+    Write-Host "Ubuntu will now start automatically at system startup" -ForegroundColor Green
+} catch {
+    Write-Host "Error creating Task Scheduler job: $_" -ForegroundColor Red
+    Write-Host "You may need to create it manually in Task Scheduler" -ForegroundColor Yellow
 }
 
 # Final instructions
@@ -183,7 +228,7 @@ Write-Host "3. Restart PowerShell to load the DOCKER_HOST environment variable" 
 Write-Host "4. Test Docker from PowerShell with: docker run hello-world" -ForegroundColor White
 Write-Host "`nHow it works:" -ForegroundColor Cyan
 Write-Host "- Docker Engine runs inside WSL Ubuntu" -ForegroundColor White
-Write-Host "- Docker CLI on Windows connects via tcp://localhost:2375" -ForegroundColor White
+Write-Host "- Docker CLI on Windows connects via the WSL IP address on port 2375" -ForegroundColor White
 Write-Host "- You can use 'docker' commands from both PowerShell and Ubuntu" -ForegroundColor White
 Write-Host "`nTroubleshooting:" -ForegroundColor Cyan
 Write-Host "- If Docker isn't running: wsl -d Ubuntu sudo systemctl start docker" -ForegroundColor White
