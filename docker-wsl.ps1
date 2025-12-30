@@ -202,24 +202,34 @@ try {
         Start-Sleep -Seconds 2
     }
     
-    # Create the service using native sc.exe
-    # Using sc.exe for simplicity (native Windows tool)
+    # Install NSSM (Non-Sucking Service Manager) using winget
+    Write-Host "Installing NSSM (Non-Sucking Service Manager) via winget..." -ForegroundColor Yellow
+    winget install -e --id NSSM.NSSM --accept-package-agreements --accept-source-agreements
+    Write-Host "NSSM installed successfully!" -ForegroundColor Green
+    
+    # Refresh PATH to pick up NSSM
+    $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+    
+    # Create the service using NSSM
     $wslPath = "C:\Windows\System32\wsl.exe"
-    $wslArgs = "-d Ubuntu -u root sleep infinity"
+    $wslArgs = "-d Ubuntu sleep infinity"
+    $nssmExe = "nssm.exe"
     
-    # Create service with sc.exe
-    sc.exe create $serviceName binPath= "`"$wslPath`" $wslArgs" start= auto DisplayName= "WSL Ubuntu Service" | Out-Null
+    # Install service with NSSM
+    & $nssmExe install $serviceName $wslPath $wslArgs
     
-    # Configure service to restart on failure
-    sc.exe failure $serviceName reset= 86400 actions= restart/60000/restart/60000/restart/60000 | Out-Null
-    
-    # Set service description
-    sc.exe description $serviceName "Keeps WSL Ubuntu distribution running to maintain Docker service availability" | Out-Null
+    # Configure service settings
+    & $nssmExe set $serviceName DisplayName "WSL Ubuntu Service"
+    & $nssmExe set $serviceName Description "Keeps WSL Ubuntu distribution running to maintain Docker service availability"
+    & $nssmExe set $serviceName Start SERVICE_AUTO_START
+    & $nssmExe set $serviceName AppStopMethodSkip 6
+    & $nssmExe set $serviceName AppRestartDelay 5000
+    & $nssmExe set $serviceName AppExit Default Restart
     
     # Start the service
     Start-Service -Name $serviceName
     
-    Write-Host "Windows Service created and started successfully!" -ForegroundColor Green
+    Write-Host "Windows Service created and started successfully using NSSM!" -ForegroundColor Green
     Write-Host "Ubuntu will now run as a Windows service and start automatically at system startup" -ForegroundColor Green
     Write-Host "Service name: $serviceName" -ForegroundColor Cyan
 } catch {
