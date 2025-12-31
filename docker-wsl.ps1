@@ -14,7 +14,7 @@ if (-not $isAdmin) {
 }
 
 # Step 1. Install WSL
-Write-Host "`n[1/10] Installing WSL..." -ForegroundColor Green
+Write-Host "`n[1/8] Installing WSL..." -ForegroundColor Green
 try {
     $wslInstalled = Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Windows-Subsystem-Linux
     if ($wslInstalled.State -ne "Enabled") {
@@ -28,7 +28,7 @@ try {
 }
 
 # Step 2. Enable Virtual Machine Platform
-Write-Host "`n[2/10] Enabling Virtual Machine Platform..." -ForegroundColor Green
+Write-Host "`n[2/8] Enabling Virtual Machine Platform..." -ForegroundColor Green
 try {
     $vmPlatform = Get-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform
     if ($vmPlatform.State -ne "Enabled") {
@@ -42,7 +42,7 @@ try {
 }
 
 # Step 3. Update WSL
-Write-Host "`n[3/10] Updating WSL..." -ForegroundColor Green
+Write-Host "`n[3/8] Updating WSL..." -ForegroundColor Green
 try {
     wsl --update
     Write-Host "WSL updated successfully" -ForegroundColor Green
@@ -50,17 +50,30 @@ try {
     Write-Host "Error updating WSL: $_" -ForegroundColor Red
 }
 
-# Step 4. Set WSL 2 as default
-Write-Host "`n[4/10] Setting WSL 2 as default version..." -ForegroundColor Green
+# Step 4. Set WSL 2 as default and configure networking
+Write-Host "`n[4/8] Setting WSL 2 as default version and configuring networking..." -ForegroundColor Green
 try {
     wsl --set-default-version 2
     Write-Host "WSL 2 set as default" -ForegroundColor Green
+    
+    # Configure .wslconfig for mirrored networking
+    $wslConfigPath = "$env:USERPROFILE\.wslconfig"
+    $wslConfigContent = @"
+[wsl2]
+networkingMode=mirrored
+
+"@
+    
+    # Create or update .wslconfig
+    Set-Content -Path $wslConfigPath -Value $wslConfigContent -Force
+    Write-Host "WSL networking mode set to mirrored" -ForegroundColor Green
+    Write-Host "Configuration saved to $wslConfigPath" -ForegroundColor Yellow
 } catch {
-    Write-Host "Error setting WSL 2 as default: $_" -ForegroundColor Red
+    Write-Host "Error configuring WSL: $_" -ForegroundColor Red
 }
 
 # Step 5. Install Ubuntu from Windows Store
-Write-Host "`n[5/10] Installing Ubuntu..." -ForegroundColor Green
+Write-Host "`n[5/8] Installing Ubuntu..." -ForegroundColor Green
 Write-Host "Checking if Ubuntu is already installed..." -ForegroundColor Yellow
 $ubuntuInstalled = wsl --list --quiet | Select-String -Pattern "Ubuntu"
 
@@ -83,46 +96,41 @@ if (-not $ubuntuInstalled) {
 Write-Host "`nPress any key once Ubuntu setup is complete..." -ForegroundColor Cyan
 $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 
-# Step 6. Update and Upgrade Linux Distribution
-Write-Host "`n[6/10] Updating and upgrading Ubuntu..." -ForegroundColor Green
-$updateScript = @"
+# Step 6. Update Ubuntu, Install and Configure Docker
+Write-Host "`n[6/8] Updating Ubuntu, installing and configuring Docker..." -ForegroundColor Green
+$dockerSetupScript = @'
+# Update and upgrade Ubuntu
+echo "Updating and upgrading Ubuntu..."
 sudo apt update && sudo apt upgrade -y
-"@
-wsl -d Ubuntu -e bash -c $updateScript
 
-# Step 7. Install Docker in Linux
-Write-Host "`n[7/10] Installing Docker in Ubuntu..." -ForegroundColor Green
-$dockerInstallScript = @'
 # Remove old Docker installations
+echo "Removing old Docker installations..."
 sudo apt remove -y docker docker-engine docker.io containerd runc
 
 # Install prerequisites
+echo "Installing prerequisites..."
 sudo apt update
 sudo apt install -y ca-certificates curl gnupg lsb-release
 
 # Add Docker's official GPG key
+echo "Adding Docker GPG key..."
 sudo mkdir -p /etc/apt/keyrings
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
 
 # Set up the repository
+echo "Setting up Docker repository..."
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
 
 # Install Docker Engine
+echo "Installing Docker Engine..."
 sudo apt update
 sudo apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 
 # Add user to docker group
 sudo usermod -aG docker $USER
 
-echo 'Docker installed successfully!'
-'@
-
-wsl -d Ubuntu -e bash -c $dockerInstallScript
-
-# Step 8. Configure Docker daemon and start service
-Write-Host "`n[8/10] Configuring Docker daemon and starting service..." -ForegroundColor Green
-$dockerConfigScript = @'
 # Create systemd override directory
+echo "Configuring Docker daemon..."
 sudo mkdir -p /etc/systemd/system/docker.service.d
 
 # Configure Docker to listen on both unix socket and TCP
@@ -139,13 +147,13 @@ sudo systemctl daemon-reload
 sudo systemctl enable docker
 sudo systemctl start docker
 
-echo 'Docker configured and started successfully!'
+echo 'Docker installed and configured successfully!'
 '@
 
-wsl -d Ubuntu -e bash -c $dockerConfigScript
+wsl -d Ubuntu -e bash -c $dockerSetupScript
 
-# Step 9. Install Docker CLI on Windows and configure
-Write-Host "`n[9/10] Installing Docker tools on Windows..." -ForegroundColor Green
+# Step 7. Install Docker CLI on Windows and configure
+Write-Host "`n[7/8] Installing Docker tools on Windows..." -ForegroundColor Green
 
 try {
     # Install Docker CLI using winget
@@ -188,52 +196,52 @@ try {
     Write-Host "  winget install Docker.Buildx" -ForegroundColor White
 }
 
-# Step 10. Create Windows Service to keep Ubuntu running
-Write-Host "`n[10/10] Creating Windows Service to keep Ubuntu running..." -ForegroundColor Green
+# Step 8. Creating Task Scheduler job to keep Ubuntu running
+Write-Host "`n[8/8] Creating Task Scheduler job to start Ubuntu at user logon..." -ForegroundColor Green
 try {
-    $serviceName = "WSLUbuntuService"
+$taskName = "WSL-Ubuntu-Startup"
+
+# Check if task already exists
+$existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+if ($existingTask) {
+    Write-Host "Task already exists. Removing old task..." -ForegroundColor Yellow
+    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
+}
+
+# Create the action (with working directory set to user profile)
+$action = New-ScheduledTaskAction -Execute "C:\Windows\System32\wsl.exe" -Argument "-d Ubuntu -e bash -c `"sleep infinity`"" -WorkingDirectory $env:USERPROFILE
+
+# Create the trigger (at user logon)
+$trigger = New-ScheduledTaskTrigger -AtLogOn
+
+# Create the principal (run as current user with limited privileges)
+$principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited
+
+# Create settings
+$settings = New-ScheduledTaskSettingsSet `
+    -AllowStartIfOnBatteries `
+    -DontStopIfGoingOnBatteries `
+    -StartWhenAvailable `
+    -RestartCount 3 `
+    -RestartInterval (New-TimeSpan -Minutes 1) `
+    -ExecutionTimeLimit (New-TimeSpan -Seconds 0) `
+    -DontStopOnIdleEnd
+
+
+# Register the task
+Register-ScheduledTask `
+    -TaskName $taskName `
+    -Action $action `
+    -Trigger $trigger `
+    -Principal $principal `
+    -Settings $settings `
+    -Description "Starts WSL Ubuntu distribution at user logon to keep Docker running"
     
-    # Check if service already exists
-    $existingService = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
-    if ($existingService) {
-        Write-Host "Service already exists. Stopping and removing old service..." -ForegroundColor Yellow
-        Stop-Service -Name $serviceName -Force -ErrorAction SilentlyContinue
-        sc.exe delete $serviceName | Out-Null
-        Start-Sleep -Seconds 2
-    }
-    
-    # Install NSSM (Non-Sucking Service Manager) using winget
-    Write-Host "Installing NSSM (Non-Sucking Service Manager) via winget..." -ForegroundColor Yellow
-    winget install -e --id NSSM.NSSM --accept-package-agreements --accept-source-agreements
-    Write-Host "NSSM installed successfully!" -ForegroundColor Green
-    
-    # Refresh PATH to pick up NSSM
-    $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
-    
-    # Create the service using NSSM
-    $wslPath = "C:\Windows\System32\wsl.exe"
-    $wslArgs = "-d Ubuntu sleep infinity"
-    $nssmExe = "nssm.exe"
-    
-    # Install service with NSSM
-    & $nssmExe install $serviceName $wslPath $wslArgs
-    
-    # Configure service settings
-    & $nssmExe set $serviceName DisplayName "WSL Ubuntu Service"
-    & $nssmExe set $serviceName Description "Keeps WSL Ubuntu distribution running to maintain Docker service availability"
-    & $nssmExe set $serviceName Start SERVICE_AUTO_START
-    & $nssmExe set $serviceName AppStopMethodSkip 6
-    & $nssmExe set $serviceName AppRestartDelay 5000
-    & $nssmExe set $serviceName AppExit Default Restart
-    
-    # Start the service
-    Start-Service -Name $serviceName
-    
-    Write-Host "Windows Service created and started successfully using NSSM!" -ForegroundColor Green
-    Write-Host "Ubuntu will now run as a Windows service and start automatically at system startup" -ForegroundColor Green
-    Write-Host "Service name: $serviceName" -ForegroundColor Cyan
+    Write-Host "Task Scheduler job created successfully!" -ForegroundColor Green
+    Write-Host "Ubuntu will now start automatically when you log on" -ForegroundColor Green
 } catch {
-    Write-Host "Error creating Windows Service: $_" -ForegroundColor Red   
+    Write-Host "Error creating Task Scheduler job: $_" -ForegroundColor Red
+    Write-Host "You may need to create it manually in Task Scheduler" -ForegroundColor Yellow
 }
 
 # Final instructions
