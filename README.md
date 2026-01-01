@@ -60,7 +60,7 @@ The installation process includes 8 steps:
 4. **Set WSL 2 as default and configure networking** - Ensures new distributions use WSL2 and sets up mirrored networking mode
 5. **Install Ubuntu** - Installs Ubuntu distribution from Windows Store
 6. **Update Ubuntu and Install Docker** - Updates Ubuntu packages and installs Docker Engine, CLI, containerd, and Docker Compose plugin
-7. **Install Windows Docker tools** - Installs Docker CLI, Compose, and Buildx on Windows, and configures DOCKER_HOST with WSL IP
+7. **Install Windows Docker tools** - Installs Docker CLI, Compose, and Buildx on Windows, and configures DOCKER_HOST with `tcp://127.0.0.1:2375`
 8. **Create Task Scheduler job** - Sets up automatic Ubuntu startup at user logon to ensure the WSL distribution stays running (required for Docker to remain accessible from Windows)
 
 ## How It Works
