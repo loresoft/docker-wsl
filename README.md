@@ -146,7 +146,7 @@ docker run -d `
 wsl -l -v
 
 # Check if the scheduled task is running
-Get-ScheduledTask -TaskName "WSL-Ubuntu-Startup" | Get-ScheduledTaskInfo
+Get-ScheduledTask -TaskName "WSL-Ubuntu-Startup"
 
 # If the task is not running, start it
 Start-ScheduledTask -TaskName "WSL-Ubuntu-Startup"
